@@ -231,6 +231,118 @@ async def finish_form(message: Message, state: FSMContext):
     await message.answer("✅ Запись добавлена!\n\nПосмотреть — в главном меню.", reply_markup=main_menu())
 
 @dp.message(F.text == "/cancel")
+# ===== ДОБАВЛЕНИЕ =====
+def cancel_button():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_form")],
+    ])
+
+@dp.callback_query(F.data == "cancel_form")
+async def cancel_callback(call: CallbackQuery, state: FSMContext):
+    await state.clear()
+    await call.message.edit_text("❌ Отменено.\n\nГлавное меню:", reply_markup=main_menu())
+
+@dp.callback_query(F.data == "add")
+async def add_menu(call: CallbackQuery):
+    await call.message.edit_text(
+        "➕ Что добавить?",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔧 Мастера", callback_data="add_masters")],
+            [InlineKeyboardButton(text="🎯 Желание", callback_data="add_wishes")],
+            [InlineKeyboardButton(text="📦 Аренда", callback_data="add_rent")],
+            [InlineKeyboardButton(text="❤️ Помощь", callback_data="add_help")],
+            [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_form")],
+        ])
+    )
+
+@dp.callback_query(F.data.startswith("add_"))
+async def add_start(call: CallbackQuery, state: FSMContext):
+    cat = call.data.replace("add_", "")
+    if cat not in ["masters", "wishes", "rent", "help"]:
+        return
+    await state.update_data(category=cat)
+    await state.set_state(AddForm.name)
+    await call.message.edit_text("👤 Как тебя зовут?", reply_markup=cancel_button())
+
+@dp.message(AddForm.name)
+async def form_name(message: Message, state: FSMContext):
+    await state.update_data(name=message.text)
+    data = await state.get_data()
+    cat = data["category"]
+    await state.set_state(AddForm.info)
+    if cat == "masters":
+        await message.answer("🛠 Что ты делаешь? (сантехник, парикмахер, ремонт электроники)", reply_markup=cancel_button())
+    elif cat == "wishes":
+        await message.answer("🎯 Что ищешь?", reply_markup=cancel_button())
+    elif cat == "rent":
+        await message.answer("📦 Что сдаёшь?", reply_markup=cancel_button())
+    else:
+        await message.answer("❤️ Что нужно?", reply_markup=cancel_button())
+
+@dp.message(AddForm.info)
+async def form_info(message: Message, state: FSMContext):
+    await state.update_data(info=message.text)
+    await state.set_state(AddForm.phone)
+    await message.answer("📞 Телефон для связи?", reply_markup=cancel_button())
+
+@dp.message(AddForm.phone)
+async def form_phone(message: Message, state: FSMContext):
+    await state.update_data(phone=message.text)
+    await state.set_state(AddForm.messenger)
+    await message.answer("💬 Telegram / WhatsApp? (или «нет»)", reply_markup=cancel_button())
+
+@dp.message(AddForm.messenger)
+async def form_messenger(message: Message, state: FSMContext):
+    msg = message.text
+    if msg.lower() in ["нет", "no", "-"]:
+        msg = ""
+    await state.update_data(messenger=msg)
+    data = await state.get_data()
+    if data["category"] == "masters":
+        await state.set_state(AddForm.place)
+        await message.answer("📍 Горняк или Горняк и рядом?", reply_markup=cancel_button())
+    elif data["category"] == "rent":
+        await state.set_state(AddForm.price)
+        await message.answer("💰 Цена за день? (или «договорная»)", reply_markup=cancel_button())
+    elif data["category"] == "wishes":
+        await state.set_state(AddForm.price)
+        await message.answer("💰 Бюджет? (или «договорная»)", reply_markup=cancel_button())
+    else:
+        await state.set_state(AddForm.place)
+        await message.answer("📍 Где? (Горняк и рядом)", reply_markup=cancel_button())
+
+@dp.message(AddForm.place)
+async def form_place(message: Message, state: FSMContext):
+    await state.update_data(place=message.text, price="", details="")
+    await finish_form(message, state)
+
+@dp.message(AddForm.price)
+async def form_price(message: Message, state: FSMContext):
+    await state.update_data(price=message.text, place="Горняк и рядом", details="")
+    await finish_form(message, state)
+
+async def finish_form(message: Message, state: FSMContext):
+    data = await state.get_data()
+    add_record(
+        data["category"], data["name"], data["info"],
+        data["phone"], data.get("messenger", ""),
+        data.get("place", ""), data.get("price", ""),
+        data.get("details", ""), message.from_user.id
+    )
+    await state.clear()
+    await message.answer("✅ Запись добавлена!\n\nПосмотреть — в главном меню.", reply_markup=main_menu())
+
+@dp.message(F.text == "/cancel")
+async def cancel(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("❌ Отменено.", reply_markup=main_menu())
+
+async def main():
+    print("Бот запущен! 🚀")
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    asyncio.run(main())
 async def cancel(message: Message, state: FSMContext):
     await state.clear()
     await message.answer("Отменено.", reply_markup=main_menu())
