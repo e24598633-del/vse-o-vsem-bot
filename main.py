@@ -1,99 +1,63 @@
 import asyncio
 import logging
 import os
+import sqlite3
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
-from aiogram.filters import CommandStart, Command
+from aiogram.filters import CommandStart
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.fsm.storage.memory import MemoryStorage
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8444507448:AAGpZo6algJ_14_j1klWo_VH7niV3oD_C4k")
 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher()
+dp = Dispatcher(storage=MemoryStorage())
 
-def main_menu():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🏠 Город", callback_data="city")],
-        [InlineKeyboardButton(text="🔧 Мастера", callback_data="masters")],
-        [InlineKeyboardButton(text="🎯 Желания", callback_data="wishes")],
-        [InlineKeyboardButton(text="📦 Аренда", callback_data="rent")],
-        [InlineKeyboardButton(text="❤️ Помощь", callback_data="help")],
-        [InlineKeyboardButton(text="➕ Добавить", callback_data="add")],
-    ])
+# ===== БАЗА ДАННЫХ =====
+def init_db():
+    conn = sqlite3.connect("bot.db")
+    c = conn.cursor()
+    c.execute("""CREATE TABLE IF NOT EXISTS records (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        category TEXT,
+        name TEXT,
+        info TEXT,
+        phone TEXT,
+        messenger TEXT,
+        place TEXT,
+        price TEXT,
+        details TEXT,
+        author_id INTEGER
+    )""")
+    conn.commit()
+    conn.close()
 
-@dp.message(CommandStart())
-async def start(message: Message):
-    await message.answer(
-        f"Привет, {message.from_user.first_name}! 👋\n\nЭто «Всё обо всём» — живая карта Горняка.\n\nВыбирай:",
-        reply_markup=main_menu()
-    )
+def add_record(category, name, info, phone, messenger, place, price, details, author_id):
+    conn = sqlite3.connect("bot.db")
+    c = conn.cursor()
+    c.execute("""INSERT INTO records 
+        (category, name, info, phone, messenger, place, price, details, author_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (category, name, info, phone, messenger, place, price, details, author_id))
+    conn.commit()
+    conn.close()
 
-@dp.callback_query(F.data == "city")
-async def city(call: CallbackQuery):
-    await call.message.edit_text("🏠 Город\n\nЗдесь будут истории мест.",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="➕ Добавить", callback_data="add_city")],
-            [InlineKeyboardButton(text="⬅️ Назад", callback_data="back")],
-        ]))
+def get_records(category):
+    conn = sqlite3.connect("bot.db")
+    c = conn.cursor()
+    c.execute("SELECT id, name, info FROM records WHERE category = ? ORDER BY id DESC", (category,))
+    rows = c.fetchall()
+    conn.close()
+    return rows
 
-@dp.callback_query(F.data == "masters")
-async def masters(call: CallbackQuery):
-    await call.message.edit_text("🔧 Мастера\n\nЗдесь будут мастера города.",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="➕ Добавить", callback_data="add_master")],
-            [InlineKeyboardButton(text="⬅️ Назад", callback_data="back")],
-        ]))
+def get_record(record_id):
+    conn = sqlite3.connect("bot.db")
+    c = conn.cursor()
+    c.execute("SELECT * FROM records WHERE id = ?", (record_id,))
+    row = c.fetchone()
+    conn.close()
+    return row
 
-@dp.callback_query(F.data == "wishes")
-async def wishes(call: CallbackQuery):
-    await call.message.edit_text("🎯 Желания\n\nСкажи, что ищешь.",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="➕ Добавить", callback_data="add_wish")],
-            [InlineKeyboardButton(text="⬅️ Назад", callback_data="back")],
-        ]))
-
-@dp.callback_query(F.data == "rent")
-async def rent(call: CallbackQuery):
-    await call.message.edit_text("📦 Аренда\n\nОдолжить или сдать вещи.",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="➕ Добавить", callback_data="add_rent")],
-            [InlineKeyboardButton(text="⬅️ Назад", callback_data="back")],
-        ]))
-
-@dp.callback_query(F.data == "help")
-async def help_cat(call: CallbackQuery):
-    await call.message.edit_text("❤️ Помощь\n\nСоседская взаимовыручка.",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="➕ Добавить", callback_data="add_help")],
-            [InlineKeyboardButton(text="⬅️ Назад", callback_data="back")],
-        ]))
-
-@dp.callback_query(F.data == "add")
-async def add(call: CallbackQuery):
-    await call.message.edit_text("➕ Что добавить?",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🏠 Историю", callback_data="add_city")],
-            [InlineKeyboardButton(text="🔧 Мастера", callback_data="add_master")],
-            [InlineKeyboardButton(text="🎯 Желание", callback_data="add_wish")],
-            [InlineKeyboardButton(text="📦 Вещь", callback_data="add_rent")],
-            [InlineKeyboardButton(text="❤️ Заявку", callback_data="add_help")],
-            [InlineKeyboardButton(text="⬅️ Назад", callback_data="back")],
-        ]))
-
-@dp.callback_query(F.data.startswith("add_"))
-async def add_stub(call: CallbackQuery):
-    await call.message.edit_text("✏️ Скоро здесь будет форма добавления.",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="⬅️ Назад", callback_data="back")],
-        ]))
-
-@dp.callback_query(F.data == "back")
-async def back(call: CallbackQuery):
-    await call.message.edit_text("Главное меню:", reply_markup=main_menu())
-
-async def main():
-    print("Бот запущен! 🚀")
-    await dp.start_polling(bot)
-
-if __name__ == "__main__":
-    asyncio.run(main())
+init_db()
